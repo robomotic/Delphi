@@ -1,0 +1,10 @@
+task_name: ${task_type}-${task_args.min_time_gap}
+task_type: ctl_norm_auc
+task_input: forward
+task_args:
+  disease_lst: config/disease_list/doi.yaml
+  min_time_gap: 0.1
+  age_groups:
+    bin_start: 40
+    bin_end: 80
+    bin_width: 5

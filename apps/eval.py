@@ -6,7 +6,7 @@ from typing import Any
 from omegaconf import OmegaConf
 
 from delphi.eval import clock, eval_task
-from delphi.eval.auc import CalibrateAUCArgs
+from delphi.eval.auc import AgeBinAUCArgs, CtlNormAUCArgs
 from delphi.eval.burden import BurdenArgs
 from delphi.eval.cumul_risk_auc import CumulRiskAUCArgs
 from delphi.eval.norm_risk_auc import NormRiskAUCArgs
@@ -19,6 +19,7 @@ from delphi.visualize.incidence import IncidencePlotConfig
 
 class TaskType(Enum):
     AUC = "auc"
+    CTL_NORM_AUC = "ctl_norm_auc"
     COMPARE_AUC = "compare_auc"
     CUMUL_RISK_AUC = "cumul_risk_auc"
     NORM_RISK_AUC = "norm_risk_auc"
@@ -28,13 +29,14 @@ class TaskType(Enum):
 
 
 task_type_to_args_type = {
-    TaskType.AUC: CalibrateAUCArgs,
-    TaskType.COMPARE_AUC: CompareAUCArgs,
-    TaskType.CUMUL_RISK_AUC: CumulRiskAUCArgs,
-    TaskType.NORM_RISK_AUC: NormRiskAUCArgs,
-    TaskType.INCIDENCE: IncidencePlotConfig,
-    TaskType.BURDEN: BurdenArgs,
-    TaskType.CALIBRATION: CalibrationArgs,
+    TaskType.AUC: AgeBinAUCArgs,
+    TaskType.CTL_NORM_AUC: CtlNormAUCArgs,
+    # TaskType.COMPARE_AUC: CompareAUCArgs,
+    # TaskType.CUMUL_RISK_AUC: CumulRiskAUCArgs,
+    # TaskType.NORM_RISK_AUC: NormRiskAUCArgs,
+    # TaskType.INCIDENCE: IncidencePlotConfig,
+    # TaskType.BURDEN: BurdenArgs,
+    # TaskType.CALIBRATION: CalibrationArgs,
 }
 
 
@@ -51,7 +53,6 @@ def eval(cfg: TaskConfig, ckpt: str):
 
     ckpt = os.path.join(os.environ["DELPHI_CKPT_DIR"], ckpt)
     assert os.path.exists(ckpt), f"checkpoint {ckpt} does not exist."
-    model, _ = load_model(ckpt)
     tokenizer = load_tokenizer_from_ckpt(ckpt)
 
     task_type = TaskType(cfg.task_type)
@@ -65,7 +66,6 @@ def eval(cfg: TaskConfig, ckpt: str):
         task_name=cfg.task_name,
         task_input=cfg.task_input,
         ckpt=ckpt,
-        model=model,
         tokenizer=tokenizer,
     )
 

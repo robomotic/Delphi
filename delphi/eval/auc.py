@@ -24,10 +24,15 @@ class TimeBins:
 
 
 @dataclass
-class CalibrateAUCArgs:
+class AgeBinAUCArgs:
     disease_lst: str = ""
     age_groups: TimeBins = field(default_factory=TimeBins)
     min_time_gap: float = 0.1
+
+
+@dataclass
+class CtlNormAUCArgs(AgeBinAUCArgs):
+    pass
 
 
 def parse_time_bins(time_bins: TimeBins) -> list[tuple[int, int]]:
@@ -100,8 +105,104 @@ def sample_one_per_participant(subjects, rates):
 
 
 @eval_task.register
-def calibrate_auc(
-    task_args: CalibrateAUCArgs,
+def auc_normalized_by_ctl(
+    task_args: CtlNormAUCArgs,
+    task_name: str,
+    task_input: str,
+    ckpt: str,
+    tokenizer: Tokenizer,
+    **kwargs,
+) -> None:
+    age_groups = parse_time_bins(task_args.age_groups)
+    with open(task_args.disease_lst, "r") as f:
+        disease_lst = yaml.safe_load(f)
+
+    logbook_path = os.path.join(ckpt, task_input, f"{task_name}.json")
+    logbook = {"cfg": {}}
+    logbook["cfg"]["min_time_gap"] = round(float(task_args.min_time_gap), 1)
+
+    input_dir = os.path.join(ckpt, task_input)
+    logits_path = os.path.join(input_dir, "logits.bin")
+    xt_path = os.path.join(input_dir, "gen.bin")
+    logits = np.memmap(logits_path, dtype=np.float16, mode="r").reshape(
+        -1, tokenizer.vocab_size
+    )
+    XT = np.fromfile(xt_path, dtype=np.uint32).reshape(-1, 3)
+
+    X, T = tricolumnar_to_2d(XT)
+    X_t0, X_t1 = X[:, :-1], X[:, 1:]
+    T_t0, T_t1 = T[:, :-1], T[:, 1:]
+    C = corrective_indices(
+        T0=T_t0,
+        T1=T_t1,
+        offset=task_args.min_time_gap,
+    )
+    T_t0 = np.take_along_axis(T_t0, C, axis=1)
+    X_t0 = np.take_along_axis(X_t0, C, axis=1)
+
+    is_female = (X_t0 == tokenizer[Gender.FEMALE.value]).any(axis=1)
+    is_male = (X_t0 == tokenizer[Gender.MALE.value]).any(axis=1)
+    is_gender_dict = {
+        "female": is_female,
+        "male": is_male,
+        "either": is_female | is_male,
+    }
+
+    sub_idx, pos_idx = np.nonzero(X)  # todo: fix for multimodal
+
+    for disease in tqdm(disease_lst):
+        logbook[disease] = {}
+
+        Y = np.zeros_like(X, dtype=np.float16)
+        dis_token = tokenizer[disease]
+        Y[sub_idx, pos_idx] = logits[:, dis_token]
+        Y_t1 = Y[:, :-1]
+        Y_t1 = np.take_along_axis(Y_t1, C, axis=1)
+
+        for gender, is_gender in is_gender_dict.items():
+
+            logbook[disease][gender] = {}
+
+            all_ctl_rates = []
+            all_dis_rates = []
+
+            x1 = X_t1[is_gender]
+            t0 = T_t0[is_gender]
+            y = Y_t1[is_gender]
+
+            ctl_subjects, dis_subjects, ctl_rates, dis_rates = rates_by_age_bin(
+                input_time=t0,
+                targets=x1,
+                predicted_rates=y,
+                dis_token=dis_token,
+                age_groups=age_groups,
+            )
+
+            ctl_median = [
+                np.median(rate) if len(rate) > 0 else np.NaN for rate in ctl_rates
+            ]
+            for subj, rate, median in zip(ctl_subjects, ctl_rates, ctl_median):
+                all_ctl_rates.extend(
+                    sample_one_per_participant(subj, rate) / abs(median)
+                )
+
+            for subj, rate, median in zip(dis_subjects, dis_rates, ctl_median):
+                all_dis_rates.extend(rate / abs(median))
+
+            auc = mann_whitney_auc(np.array(all_ctl_rates), np.array(all_dis_rates))
+            logbook[disease][gender]["total"] = {
+                "auc": round(float(auc), 4) if not np.isnan(auc) else None,
+                "ctl_count": int(np.sum([len(s) for s in ctl_subjects])),
+                "dis_count": int(np.sum([len(s) for s in dis_subjects])),
+            }
+
+    with open(logbook_path, "w") as f:
+        json.dump(logbook, f, indent=4)
+
+
+@eval_task.register
+def auc_by_age_bin(
+    task_args: AgeBinAUCArgs,
     task_name: str,
     task_input: str,
     ckpt: str,
@@ -115,15 +216,8 @@ def calibrate_auc(
         disease_lst = yaml.safe_load(f)
 
     logbook_path = os.path.join(ckpt, task_input, f"{task_name}.json")
-    if os.path.exists(logbook_path):
-        logbook = json.load(open(logbook_path, "r"))
-    else:
-        logbook = {}
-    logbook_cfg = logbook.setdefault("config", {})
-    if "min_time_gap" in logbook_cfg:
-        assert logbook_cfg["min_time_gap"] == round(float(task_args.min_time_gap), 1)
-    else:
-        logbook_cfg["min_time_gap"] = round(float(task_args.min_time_gap), 1)
+    logbook = {"cfg": {}}
+    logbook["cfg"]["min_time_gap"] = round(float(task_args.min_time_gap), 1)
 
     input_dir = os.path.join(ckpt, task_input)
     logits_path = os.path.join(input_dir, "logits.bin")
@@ -152,7 +246,7 @@ def calibrate_auc(
         "either": is_female | is_male,
     }
 
-    sub_idx, pos_idx = np.nonzero(X)
+    sub_idx, pos_idx = np.nonzero(X)  # todo: fix for multimodal
 
     for disease in tqdm(disease_lst):
         logbook[disease] = {}

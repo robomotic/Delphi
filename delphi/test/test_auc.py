@@ -5,7 +5,6 @@ import numpy as np
 import pytest
 
 from archive.evaluate_auc import get_calibration_auc
-from delphi import disease
 from delphi.data.dataset import tricolumnar_to_2d
 from delphi.data.trajectory import corrective_indices
 from delphi.env import DELPHI_CKPT_DIR
@@ -178,4 +177,4 @@ def test(ckpt: str, disease: str, offset: float):
         bl_ctl_rates=bl_ctl_rates,
     )
 
-    # assert not_too_slow(new_t, bl_t)
+    assert not_too_slow(new_t, bl_t)

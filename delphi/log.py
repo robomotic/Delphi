@@ -115,6 +115,7 @@ class GenLogger:
             raise ValueError("memmaps not initialized; call init_memmaps first")
 
         if self.save_tokens:
+            # TODO: fix for multimodal pipeline
             sub_idx, pos_idx = np.nonzero(tokens > 0)
             packed_batch = np.stack(
                 (
