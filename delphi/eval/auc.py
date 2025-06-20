@@ -282,7 +282,7 @@ def auc_by_age_bin(
 
             logbook[disease][gender] = {
                 age_group_keys[i]: {
-                    "auc": round(float(auc[i]), 2) if not np.isnan(auc[i]) else None,
+                    "auc": round(float(auc[i]), 4) if not np.isnan(auc[i]) else None,
                     "ctl_count": len(ctl_subjects[i]),
                     "dis_count": len(dis_subjects[i]),
                 }
@@ -290,7 +290,7 @@ def auc_by_age_bin(
             }
             mean_auc = float(np.nanmean(auc))
             logbook[disease][gender]["total"] = {
-                "auc": round(mean_auc, 2) if not np.isnan(mean_auc) else None,
+                "auc": round(mean_auc, 4) if not np.isnan(mean_auc) else None,
                 "ctl_count": int(np.sum([len(s) for s in ctl_subjects])),
                 "dis_count": int(np.sum([len(s) for s in dis_subjects])),
             }
